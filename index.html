@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paint the Grid</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+         justify-content: center; gap: 16px; background: #10131f; color: #e8ebf5; font-family: system-ui, sans-serif; }
+  h1 { margin: 0; font-size: 1.6rem; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #hud { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 12px 26px; padding: 12px 22px;
+         border-radius: 16px; background: linear-gradient(160deg, #1d2240, #141830); box-shadow: 0 8px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12); }
+  #hud[hidden] { display: none; }
+  .hud-block { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 64px; }
+  .hud-block.wide { min-width: 170px; }
+  .hud-label { font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: #8d97c4; }
+  .level-badge { font-size: 1.5rem; font-weight: 800; line-height: 40px; padding: 0 14px; border-radius: 12px; color: #fff;
+                 background: linear-gradient(160deg, #6d8bff, #3a55d8); box-shadow: 0 3px 0 #22348f; }
+  .hearts { display: flex; gap: 6px; height: 40px; align-items: center; }
+  .heart { width: 38px; height: 34px; filter: drop-shadow(0 3px 3px rgba(0,0,0,.5)); }
+  .heart.full path { fill: url(#heartGrad); stroke: #8c0f1f; }
+  .heart.lost path { fill: #20253f; stroke: #4a5278; stroke-dasharray: 4 3; }
+  .heart.lost { filter: none; opacity: .8; }
+  .weapon-icon { font-size: 2rem; height: 40px; line-height: 40px; transition: filter .3s; }
+  .weapon-icon.off { filter: grayscale(1) brightness(.5); }
+  .weapon-icon.on { filter: drop-shadow(0 0 8px rgba(120, 255, 160, .7)); }
+  .ammo-row { display: flex; align-items: center; gap: 8px; height: 40px; }
+  .pips { display: flex; gap: 4px; max-width: 150px; flex-wrap: wrap; justify-content: center; }
+  .pip { width: 9px; height: 24px; border-radius: 5px 5px 2px 2px; background: linear-gradient(90deg, #b8860b, #ffe27a 45%, #c8921a);
+         box-shadow: 0 2px 0 #6b4a05, 0 0 6px rgba(255, 210, 74, .5); position: relative; }
+  .pip::before { content: ''; position: absolute; left: 0; right: 0; top: -6px; height: 8px; border-radius: 5px 5px 0 0;
+                 background: linear-gradient(90deg, #8a5a2b, #d9a066 45%, #8a5a2b); }
+  .pips .none { color: #5d6690; font-size: .8rem; }
+  .ammo-num { font-size: 1.3rem; font-weight: 800; color: #ffe27a; min-width: 2ch; }
+  .bar { width: 170px; height: 18px; border-radius: 10px; background: #0d1020; box-shadow: inset 0 2px 4px rgba(0,0,0,.7); overflow: hidden; }
+  #hudBar { height: 100%; width: 0; border-radius: 10px; background: linear-gradient(180deg, #7dffa0, #2fbf5b); transition: width .25s;
+            box-shadow: 0 0 10px rgba(80, 230, 130, .6); }
+  .kills { display: flex; align-items: center; gap: 6px; height: 40px; }
+  .kills-icon { font-size: 1.7rem; }
+  .kills-num { font-size: 1.6rem; font-weight: 800; color: #c9a8ff; min-width: 1.5ch; text-align: left; }
+  #overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+             background: rgba(8, 10, 20, .8); overflow: auto; padding: 16px; box-sizing: border-box; }
+  #overlay[hidden] { display: none; }
+  #endPanel { width: min(420px, 100%); padding: 20px 24px; border-radius: 18px; text-align: center;
+              background: linear-gradient(160deg, #1d2240, #141830); box-shadow: 0 16px 48px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.12); }
+  #endTitle { margin: 0 0 4px; font-size: 1.8rem; }
+  #endStats { margin: 0 0 14px; color: #c3c9e6; }
+  .score-card { width: min(380px, 100%); text-align: center; }
+  .score-card table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .score-card caption { font-size: .75rem; letter-spacing: .14em; text-transform: uppercase; color: #8d97c4; padding-bottom: 6px; }
+  .score-card th { font-size: .75rem; color: #8d97c4; font-weight: 600; padding: 4px 8px; }
+  .score-card td { padding: 6px 8px; border-top: 1px solid rgba(255,255,255,.07); }
+  #startScoresEmpty { color: #8d97c4; font-size: .9rem; margin: 0; }
+  #startScores [hidden] { display: none; }
+  #scores { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  #scores caption { font-size: .75rem; letter-spacing: .14em; text-transform: uppercase; color: #8d97c4; padding-bottom: 6px; }
+  #scores th { font-size: .75rem; color: #8d97c4; font-weight: 600; padding: 4px 8px; text-align: center; }
+  #scores td { padding: 6px 8px; text-align: center; border-top: 1px solid rgba(255,255,255,.07); }
+  #scores tr.me td { background: rgba(255, 216, 74, .16); color: #ffe27a; font-weight: 700; }
+  #scores tr.me td:first-child { border-radius: 8px 0 0 8px; } #scores tr.me td:last-child { border-radius: 0 8px 8px 0; }
+  #scoreNote { min-height: 1.2em; margin: 10px 0 14px; font-size: .85rem; color: #8d97c4; }
+  .bump { animation: bump .35s ease-out; }
+  @keyframes bump { 0% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  :root { --cell: 64px; --gap: 8px; }
+  #stage { perspective: 1800px; padding: 8px 0 24px; }
+  #board { position: relative; display: grid; gap: var(--gap); transform: rotateX(18deg); transform-style: preserve-3d; }
+  .cell { width: var(--cell); height: var(--cell); border-radius: 12px; box-sizing: border-box; display: flex;
+          align-items: center; justify-content: center; font-size: calc(var(--cell) * 0.5); transition: background .25s;
+          --top: #3a426b; --base: #2a3050; --side: #171b30;
+          background: linear-gradient(145deg, var(--top), var(--base));
+          box-shadow: 0 calc(var(--cell) * 0.11) 0 var(--side), 0 calc(var(--cell) * 0.19) 14px rgba(0,0,0,.5), inset 0 2px 0 rgba(255,255,255,.28); }
+  .cell.wall { background: transparent; box-shadow: none; }
+  .cell.green { --top: #5be884; --base: #2fbf5b; --side: #176a32; }
+  .cell.red { --top: #ff7676; --base: #d93a3a; --side: #7d1818; }
+  .cell { position: relative; }
+  .cell.item::after { content: ''; position: absolute; left: 12%; bottom: 8%; height: 7%; min-height: 3px; border-radius: 4px;
+                      width: calc(76% * var(--p, 1)); background: #ffd84a; transition: width .1s linear; }
+  .cell.expiring::after { background: #ff5252; }
+  .cell.expiring { animation: item-pulse .4s ease-in-out infinite alternate; }
+  @keyframes item-pulse { from { filter: brightness(1); } to { filter: brightness(1.7); } }
+  .cell.warn { animation: warn-blink .5s steps(1, end) infinite; }
+  @keyframes warn-blink { 0% { --top: #ff7676; --base: #d93a3a; --side: #7d1818; } 50% { --top: #3a426b; --base: #2a3050; --side: #171b30; } }
+  .cell.shot { box-shadow: 0 calc(var(--cell) * 0.11) 0 var(--side), 0 calc(var(--cell) * 0.19) 14px rgba(0,0,0,.5), inset 0 0 0 4px #ffd84a; }
+  .sprite { position: absolute; left: 0; top: 0; width: var(--cell); height: var(--cell); pointer-events: none;
+            transform-style: preserve-3d; transition: transform .14s ease-out, opacity .2s; }
+  .sprite.alien { transition: transform .5s ease-in-out, opacity .2s; }
+  .sprite.hidden { opacity: 0; }
+  .sprite.bullet { z-index: 2; }
+  .dot { position: absolute; left: 50%; top: 50%; width: 30px; height: 13px; margin: -6px 0 0 -15px; border-radius: 6px;
+         background: #fff6b0; box-shadow: 0 0 10px 4px #ffd84a, 0 0 22px 8px rgba(255, 140, 0, .6); transform: translateY(-8px); }
+  .dot.vertical { width: 13px; height: 30px; margin: -15px 0 0 -6px; }
+  .sprite.boom { z-index: 3; }
+  .sprite.boom .glyph { font-size: calc(var(--cell) * 0.95); animation: boom .6s ease-out forwards; }
+  .sprite.boom::before, .sprite.boom::after { content: ''; position: absolute; inset: 0; border-radius: 50%; }
+  .sprite.boom::before { border: 4px solid #ffd84a; animation: boom-ring .6s ease-out forwards; }
+  .sprite.boom::after { background: radial-gradient(circle, rgba(255,255,255,.95), rgba(255,170,40,.55) 45%, transparent 70%);
+                        animation: boom-flash .35s ease-out forwards; }
+  @keyframes boom { 0% { opacity: 1; scale: .3; } 40% { opacity: 1; scale: 1.15; } 100% { opacity: 0; scale: 1.6; } }
+  @keyframes boom-ring { from { opacity: 1; scale: .3; } to { opacity: 0; scale: 1.9; } }
+  @keyframes boom-flash { from { opacity: 1; scale: .5; } to { opacity: 0; scale: 1.5; } }
+  .glyph { display: block; font-size: calc(var(--cell) * 0.55); line-height: var(--cell); text-align: center; transform-origin: 50% 100%;
+           transform: translateY(-8px) rotateX(-18deg); filter: drop-shadow(0 6px 4px rgba(0,0,0,.55)); }
+  button { font-size: 1.1rem; padding: 10px 20px; border-radius: 8px; border: 0; background: #4a6cf7; color: #fff; cursor: pointer; }
+  button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  #instructions { max-width: 420px; text-align: center; line-height: 1.5; }
+  #result { font-size: 1.4rem; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Paint the Grid</h1>
+  <div id="instructions">
+    Move with the arrow keys and paint every cell green.<br>
+    Aliens paint cells red. If an alien touches you, you lose a life.<br>
+    Picking up the weapon (🔫) gives you 3 shots; ammo (📦) gives 3 more. Items vanish after 10 s (the bar shows the time left). Press Space: the bullet flies one cell, toward a neighbouring alien.<br>
+    Paint every cell green to finish a level. There are 6 levels.<br>
+  </div>
+  <button id="start">Start</button>
+  <div id="startScores" class="score-card">
+    <table id="startScoresTable">
+      <caption>Top 10</caption>
+      <thead><tr><th>#</th><th>Level</th><th>Kills</th><th>Date</th></tr></thead>
+      <tbody id="startScoresBody"></tbody>
+    </table>
+    <p id="startScoresEmpty">Top 10: no results yet. Play a game to get on the board.</p>
+  </div>
+  <div id="hud" hidden>
+    <div class="hud-block"><span class="hud-label">Level</span><span id="hudLevel" class="level-badge"></span></div>
+    <div class="hud-block"><span class="hud-label">Lives</span><div id="hudLives" class="hearts"></div></div>
+    <div class="hud-block"><span class="hud-label">Weapon</span><div id="hudWeapon" class="weapon-icon">🔫</div></div>
+    <div class="hud-block"><span class="hud-label">Kills</span><div class="kills"><span class="kills-icon">👾</span><span id="hudKills" class="kills-num">0</span></div></div>
+    <div class="hud-block"><span class="hud-label">Ammo</span><div class="ammo-row"><div id="hudAmmo" class="pips"></div><span id="hudAmmoNum" class="ammo-num"></span></div></div>
+    <div class="hud-block wide"><span class="hud-label">Painted <span id="hudPainted"></span></span><div class="bar"><div id="hudBar"></div></div></div>
+  </div>
+  <div id="status" class="sr-only" aria-live="polite"></div>
+  <div id="stage"><div id="board" aria-label="Game grid"></div></div>
+  <div id="result" aria-live="assertive"></div>
+  <div id="overlay" hidden>
+    <div id="endPanel" role="dialog" aria-modal="true" aria-labelledby="endTitle">
+      <h2 id="endTitle"></h2>
+      <p id="endStats"></p>
+      <table id="scores">
+        <caption>Top 10</caption>
+        <thead><tr><th>#</th><th>Level</th><th>Kills</th><th>Date</th></tr></thead>
+        <tbody id="scoresBody"></tbody>
+      </table>
+      <p id="scoreNote"></p>
+      <button id="again">Play again</button>
+    </div>
+  </div>
+  <button id="next" hidden>Next level</button>
+  <button id="restart" hidden>Restart</button>
+
+<script>
+// --- Rules (see game-rules.md) ---
+const LAST_LEVEL = 6;
+let level = 1;                      // current level, 1..6
+let ROWS = 3, COLS = 5;             // set per level by buildMaze(): level 1 = 5 columns x 3 rows
+const START_LIVES = 3;
+const FIRST_ALIEN_MS = 3000;        // first alien appears 3 s after the start
+const ALIEN_GAP_MS = 3000;          // then one more every 3 s
+const ALIEN_STEP_MS = 2000;         // an alien moves every 2 s
+const ALIEN_RESPAWN_MS = 5000;      // a removed alien returns after 5 s
+const SPAWN_WARN_MS = 2000;         // the spawn cell blinks this long before an alien appears
+const WEAPON_MS = 3000;             // weapon cell appears 3 s after the start
+const AMMO_MS = 6000;               // ammo cell appears 3 s after the weapon
+const WEAPON_AMMO = 3;              // ammo that comes with the weapon
+const AMMO_AMOUNT = 3;              // ammo given per ammo-cell pickup
+let CELL = 64, GAP = 8, PITCH = 72;  // set in buildBoard() so the whole board fits the window
+const AMMO_RESPAWN_MS = 10000;      // ammo cell returns 10 s after pickup
+const ITEM_LIFE_MS = 10000;         // an untouched weapon or ammo cell disappears after 10 s
+const ITEM_WARN_MS = 3000;          // ...and blinks during its last 3 s
+const ITEM_RESPAWN_MS = 10000;      // a disappeared (untaken) item returns after 10 s
+const BULLET_RANGE = 1;             // the bullet flies only one cell
+const BULLET_MS_PER_CELL = 70;      // bullet flight speed (animation only)
+const BULLET_MIN_MS = 220, BULLET_MAX_MS = 450;
+const SHOT_FLASH_MS = 200;          // how long the bullet path stays visible
+const TICK_MS = 100;
+const MAX_DT_MS = 250;              // never "catch up" after a background tab
+
+// Every level is a square ring (k x k cells around a solid block) with a spur sticking out of the
+// middle of its left and right sides. Level 1 (k=3, spurs of 1) looks like this ('+' walkable):
+//   -+++-
+//   ++-++
+//   -+++-
+// From level 3 the side spurs are 2 cells long and a third spur goes up from the middle of the
+// bottom side into the ring, 2 cells long. Ring sizes grow with the level: 3, 5, 7, 9, 11, 13.
+const SHAPES = [
+  { k: 3,  side: 1, up: 0 },
+  { k: 5,  side: 1, up: 0 },
+  { k: 7,  side: 2, up: 2 },
+  { k: 9,  side: 2, up: 2 },
+  { k: 11, side: 2, up: 2 },
+  { k: 13, side: 2, up: 2 },
+];
+
+// midR / midC: middle row and column. The player starts at the far end of the left spur, aliens
+// appear at the far end of the right spur; the weapon sits top middle and the ammo bottom middle.
+function buildMaze(lv) {
+  const { k, side, up } = SHAPES[lv - 1];
+  const rows = k, cols = k + 2 * side;
+  const open = Array.from({ length: rows }, () => Array(cols).fill(false));
+  for (let i = 0; i < k; i++) {
+    open[0][side + i] = open[k - 1][side + i] = true;       // top and bottom sides of the ring
+    open[i][side] = open[i][side + k - 1] = true;           // left and right sides of the ring
+  }
+  const midR = (k - 1) / 2, midC = (cols - 1) / 2;
+  for (let i = 0; i < side; i++) {
+    open[midR][i] = true;                                   // left spur
+    open[midR][cols - 1 - i] = true;                        // right spur
+  }
+  for (let j = 1; j <= up; j++) open[k - 1 - j][midC] = true; // spur up from the bottom side
+  return { open, rows, cols, midR, midC };
+}
+
+// state: 'idle' | 'playing' | 'levelComplete' | 'defeat' | 'victory'
+let state = 'idle';
+let maze, paint, player, lives, aliens, clock, timer, lastTime, startCell, spawnCell;
+let weapon, ammoCell, hasWeapon, ammo, facing, shot, kills;
+let cellEls, playerEl, alienEls, playerSnap;
+
+const boardEl = document.getElementById('board');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+const startBtn = document.getElementById('start');
+const restartBtn = document.getElementById('restart');
+const againBtn = document.getElementById('again');
+const overlayEl = document.getElementById('overlay');
+const nextBtn = document.getElementById('next');
+const hudEl = document.getElementById('hud');
+
+// One red heart shape, reused for every life. The gradient is defined once and shared by the hearts.
+const HEART = '<svg class="heart %C" viewBox="0 0 32 29" aria-hidden="true"><path stroke-width="2" stroke-linejoin="round" d="M16 27C6 19 2 14 2 9 2 5 5 2 9 2c3 0 5 1.800 7 4.500C18 3.800 20 2 23 2c4 0 7 3 7 7 0 5-4 10-14 18z"/></svg>';
+document.body.insertAdjacentHTML('beforeend', '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="heartGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff6b7d"/><stop offset="1" stop-color="#e01b35"/></linearGradient></defs></svg>');
+const MAX_PIPS = 12;
+let hudKey = '';
+function bump(el) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+
+function renderHud(done, total) {
+  const key = [level, lives, hasWeapon, ammo, done, total, kills].join('|');
+  if (key === hudKey) return;
+  const prev = hudKey.split('|');
+  hudKey = key;
+  document.getElementById('hudLevel').textContent = `${level} / ${LAST_LEVEL}`;
+  const hearts = document.getElementById('hudLives');
+  hearts.innerHTML = Array.from({ length: START_LIVES }, (_, i) => HEART.replace('%C', i < lives ? 'full' : 'lost')).join('');
+  const weaponEl = document.getElementById('hudWeapon');
+  weaponEl.className = 'weapon-icon ' + (hasWeapon ? 'on' : 'off');
+  const pips = document.getElementById('hudAmmo');
+  pips.innerHTML = ammo > 0 ? '<span class="pip"></span>'.repeat(Math.min(ammo, MAX_PIPS)) : '<span class="none">empty</span>';
+  document.getElementById('hudKills').textContent = kills;
+  document.getElementById('hudAmmoNum').textContent = ammo > 0 ? '×' + ammo : '';
+  document.getElementById('hudPainted').textContent = `${done} / ${total}`;
+  document.getElementById('hudBar').style.width = (total ? (100 * done / total) : 0) + '%';
+  if (prev[1] !== undefined && +prev[1] !== lives && prev[0] == level) bump(hearts);
+  if (prev[2] !== undefined && prev[2] !== String(hasWeapon) && prev[0] == level) bump(weaponEl);
+  if (prev[3] !== undefined && +prev[3] !== ammo && prev[0] == level) bump(document.querySelector('.ammo-row'));
+  if (prev[6] !== undefined && +prev[6] !== kills) bump(document.querySelector('.kills'));
+}
+
+function stopTimer() {
+  if (timer !== undefined) { clearInterval(timer); timer = undefined; }
+}
+
+// New game: back to level 1 with full lives.
+function newGame() {
+  level = 1;
+  lives = START_LIVES;
+  kills = 0;                        // aliens killed in this game (all levels)
+  startLevel();
+}
+
+// Start (or restart) the current level. Lives are kept.
+function startLevel() {
+  stopTimer();                      // timers never stack after restart
+  maze = buildMaze(level);
+  ROWS = maze.rows; COLS = maze.cols;
+  paint = Array.from({ length: ROWS }, () => Array(COLS).fill(null)); // null | 'green' | 'red'
+  startCell = { r: maze.midR, c: 0 };           // middle of the left side
+  spawnCell = { r: maze.midR, c: COLS - 1 };   // middle of the right side
+  player = { ...startCell };
+  paint[player.r][player.c] = 'green';
+  // one alien per level number; each appears at its own time
+  aliens = [];
+  for (let i = 0; i < level; i++) {
+    aliens.push({ alive: false, r: 0, c: 0, appearAt: FIRST_ALIEN_MS + i * ALIEN_GAP_MS, nextStep: 0 });
+  }
+  // weapon and ammo sit on ring cells at the top and bottom middle
+  weapon = { r: 0, c: maze.midC, appearAt: WEAPON_MS, visible: false, expiresAt: 0 };
+  ammoCell = { r: ROWS - 1, c: maze.midC, appearAt: AMMO_MS, visible: false, expiresAt: 0 };
+  hasWeapon = false;
+  ammo = 0;
+  facing = [0, 1];                  // before the first move the direction is right
+  shot = null;
+  clock = 0;
+  lastTime = performance.now();
+  state = 'playing';
+  resultEl.textContent = '';
+  overlayEl.hidden = true;
+  nextBtn.hidden = true;
+  buildBoard();
+  timer = setInterval(tick, TICK_MS);
+  render();
+}
+
+function tick() {
+  if (state !== 'playing') return;
+  const now = performance.now();
+  clock += Math.min(now - lastTime, MAX_DT_MS);
+  lastTime = now;
+  for (const it of [weapon, ammoCell]) {      // untaken items disappear after 10 s and return later
+    if (it.visible && clock >= it.expiresAt) { it.visible = false; it.appearAt = clock + ITEM_RESPAWN_MS; }
+  }
+  if (!weapon.visible && !hasWeapon && clock >= weapon.appearAt) showItem(weapon);
+  if (!ammoCell.visible && clock >= ammoCell.appearAt) showItem(ammoCell);
+  pickUp();
+  if (shot && clock >= shot.until) shot = null;
+  for (const a of aliens) {
+    if (!a.alive) {
+      if (clock >= a.appearAt) spawnAlien(a);
+    } else if (clock >= a.nextStep) {
+      moveAlien(a);
+      a.nextStep = clock + ALIEN_STEP_MS;
+    }
+    if (state !== 'playing') break;
+  }
+  render();
+}
+
+function showItem(it) {
+  it.visible = true;
+  it.expiresAt = clock + ITEM_LIFE_MS;
+}
+
+// Step on the weapon cell to take it (with 3 ammo); step on the ammo cell for +3 ammo.
+function pickUp() {
+  if (weapon.visible && player.r === weapon.r && player.c === weapon.c) {
+    weapon.visible = false;
+    hasWeapon = true;
+    ammo += WEAPON_AMMO;
+  }
+  if (ammoCell.visible && player.r === ammoCell.r && player.c === ammoCell.c) {
+    ammoCell.visible = false;
+    ammoCell.appearAt = clock + AMMO_RESPAWN_MS;
+    ammo += AMMO_AMOUNT;
+  }
+}
+
+// The cells a bullet would cross from the player in one direction (walkable only, at most BULLET_RANGE),
+// stopping at the first alien.
+function castRay(dir) {
+  const path = [];
+  let r = player.r + dir[0], c = player.c + dir[1];
+  let victim = null;
+  while (path.length < BULLET_RANGE && r >= 0 && c >= 0 && r < ROWS && c < COLS && maze.open[r][c]) {
+    path.push({ r, c });
+    victim = aliens.find(a => a.alive && a.r === r && a.c === c);
+    if (victim) break;
+    r += dir[0]; c += dir[1];
+  }
+  return { dir, path, victim };
+}
+
+// Space: needs the weapon and 1 ammo. The bullet reaches only the cell next to the player. It goes
+// toward a neighbouring cell (up, down, left or right) that holds an alien; with none, it goes the
+// way the player last moved and misses. The hit is instant.
+function shoot() {
+  if (state !== 'playing' || !hasWeapon || ammo < 1) return;
+  ammo--;
+  const rays = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(castRay);
+  const hits = rays.filter(ray => ray.victim);
+  let chosen = rays.find(ray => ray.dir[0] === facing[0] && ray.dir[1] === facing[1]); // default: last move
+  if (hits.length) {
+    const nearest = Math.min(...hits.map(ray => ray.path.length));
+    const closest = hits.filter(ray => ray.path.length === nearest);
+    chosen = closest.find(ray => ray === chosen) || closest[0];                       // tie: keep facing
+  }
+  facing = chosen.dir;
+  const { path, victim } = chosen;
+  if (victim) {
+    victim.alive = false;
+    victim.appearAt = clock + ALIEN_RESPAWN_MS;
+    kills++;
+  }
+  shot = { path, until: clock + SHOT_FLASH_MS };
+  fireBullet(path, victim);
+  render();
+}
+
+// Visual only: a glowing bullet flies from the player along the path (the hit itself is instant).
+// An explosion plays where an alien was hit.
+function fireBullet(path, victim) {
+  // a shot into a wall still shows a short puff of bullet next to the rocket
+  const end = path.length ? path[path.length - 1] : { r: player.r + facing[0] * 0.45, c: player.c + facing[1] * 0.45 };
+  const el = document.createElement('div');
+  el.className = 'sprite bullet';
+  const dot = document.createElement('span');
+  dot.className = 'dot' + (facing[0] !== 0 ? ' vertical' : '');
+  el.appendChild(dot);
+  boardEl.appendChild(el);
+  el.style.transition = 'none';
+  el.style.transform = `translate(${player.c * PITCH}px, ${player.r * PITCH}px)`;
+  void el.offsetWidth;                                   // start the flight from the player's cell
+  const ms = Math.min(BULLET_MAX_MS, Math.max(BULLET_MIN_MS, path.length * BULLET_MS_PER_CELL));
+  el.style.transition = `transform ${ms}ms linear`;
+  el.style.transform = `translate(${end.c * PITCH}px, ${end.r * PITCH}px)`;
+  if (victim) victim.dying = true;                       // keep the alien on screen until the bullet lands
+  setTimeout(() => {
+    el.remove();
+    if (victim) {
+      victim.dying = false;
+      const boom = makeSprite('💥', 'boom');
+      placeSprite(boom, end.r, end.c, true);
+      setTimeout(() => boom.remove(), 600);
+      if (aliens.includes(victim)) render();             // the alien disappears now
+    }
+  }, ms);
+}
+
+function spawnAlien(a) {
+  a.alive = true;
+  a.r = spawnCell.r; a.c = spawnCell.c;
+  a.nextStep = clock + ALIEN_STEP_MS;
+  paint[a.r][a.c] = 'red';
+  checkCollision();
+}
+
+// Aliens head for the nearest cell that is not red yet (unpainted or green),
+// so they keep capturing new cells. Ties are broken at random.
+function moveAlien(a) {
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const walkable = (r, c) => r >= 0 && c >= 0 && r < ROWS && c < COLS && maze.open[r][c];
+  const dist = Array.from({ length: ROWS }, () => Array(COLS).fill(Infinity));
+  const queue = [];
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (maze.open[r][c] && paint[r][c] !== 'red') { dist[r][c] = 0; queue.push([r, c]); }
+  }
+  for (let i = 0; i < queue.length; i++) {
+    const [r, c] = queue[i];
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (walkable(nr, nc) && dist[nr][nc] === Infinity) { dist[nr][nc] = dist[r][c] + 1; queue.push([nr, nc]); }
+    }
+  }
+  const options = dirs.map(([dr, dc]) => ({ r: a.r + dr, c: a.c + dc })).filter(p => walkable(p.r, p.c));
+  const best = Math.min(...options.map(p => dist[p.r][p.c]));
+  const choices = options.filter(p => dist[p.r][p.c] === best);
+  const next = choices[Math.floor(Math.random() * choices.length)];
+  a.r = next.r; a.c = next.c;
+  paint[a.r][a.c] = 'red';
+  checkCollision();
+}
+
+// Player and an alien on the same cell: lose 1 life, return to the start cell.
+function checkCollision() {
+  if (state !== 'playing') return;
+  if (!aliens.some(a => a.alive && a.r === player.r && a.c === player.c)) return;
+  lives--;
+  if (lives <= 0) { endGame(); return; }
+  player = { ...startCell };
+  playerSnap = true;                // jump to the start, do not slide across the board
+  paint[player.r][player.c] = 'green';
+  // an alien standing on the start cell is removed and returns later
+  for (const a of aliens) {
+    if (a.alive && a.r === player.r && a.c === player.c) {
+      a.alive = false;
+      a.appearAt = clock + ALIEN_RESPAWN_MS;
+    }
+  }
+}
+
+function endGame() {
+  state = 'defeat';
+  stopTimer();
+  resultEl.textContent = `Out of lives. Aliens killed: ${kills}`;
+  showEnd(false);
+}
+
+// ---- High scores: top 10 by level reached, then by aliens killed. Kept in a cookie of this browser. ----
+const SCORES_COOKIE = 'paint_the_grid_scores';
+const MAX_SCORES = 10;
+
+// Cookie value: runs joined by "|", each run "level:kills:won:time" (about 25 characters per run).
+function loadScores() {
+  try {
+    const m = document.cookie.split('; ').find(c => c.startsWith(SCORES_COOKIE + '='));
+    if (!m) return [];
+    return decodeURIComponent(m.slice(SCORES_COOKIE.length + 1)).split('|').map(part => {
+      const [l, k, w, t] = part.split(':').map(Number);
+      return { level: l, kills: k, won: w === 1, at: t };
+    }).filter(e => Number.isFinite(e.level) && Number.isFinite(e.kills) && Number.isFinite(e.at));
+  } catch (err) { return []; }
+}
+
+// Returns true only if the browser really kept the cookie (cookies are refused on some local files).
+function saveScores(list) {
+  try {
+    const value = encodeURIComponent(list.map(e => [e.level, e.kills, e.won ? 1 : 0, e.at].join(':')).join('|'));
+    document.cookie = `${SCORES_COOKIE}=${value}; max-age=31536000; path=/; SameSite=Lax`;
+    return document.cookie.split('; ').some(c => c === `${SCORES_COOKIE}=${value}`);
+  } catch (err) { return false; }
+}
+
+// Fill a table body with the top-10 rows; `mine` is the run to highlight (or null).
+function fillScores(body, list, mine) {
+  body.innerHTML = '';
+  list.forEach((e, i) => {
+    const tr = document.createElement('tr');
+    if (e === mine) tr.className = 'me';
+    const date = new Date(e.at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    [i + 1, e.won ? `${e.level} 🏆` : e.level, e.kills, date].forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = v;
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+// The table on the start screen (before the first game).
+function showStartScores() {
+  const list = loadScores().sort(compareRuns).slice(0, MAX_SCORES);
+  fillScores(document.getElementById('startScoresBody'), list, null);
+  document.getElementById('startScoresEmpty').hidden = list.length > 0;
+  document.getElementById('startScoresTable').hidden = list.length === 0;
+}
+
+// Higher level first, then more kills, then the older result.
+function compareRuns(a, b) { return b.level - a.level || b.kills - a.kills || a.at - b.at; }
+
+// Record this run and show the end panel with the table. `won` = all 6 levels done.
+function showEnd(won) {
+  const run = { level, kills, won, at: Date.now() };
+  const ranked = [...loadScores(), run].sort(compareRuns);
+  const top = ranked.slice(0, MAX_SCORES);
+  const saved = saveScores(top);
+  const rank = top.indexOf(run);                   // -1 when the run is not in the top 10
+
+  document.getElementById('endTitle').textContent = won ? 'You win! 🏆' : 'Out of lives';
+  document.getElementById('endStats').textContent = `You reached level ${level} and killed ${kills} alien${kills === 1 ? '' : 's'}.`;
+  fillScores(document.getElementById('scoresBody'), top, run);
+  document.getElementById('scoreNote').textContent =
+    (rank === 0 ? 'New best result!' : rank > 0 ? `You are number ${rank + 1}.` : 'Not in the top 10 this time.') +
+    (saved ? '' : ' (The browser did not keep the results: cookies are blocked here.)');
+  overlayEl.hidden = false;
+  againBtn.focus();
+}
+
+function totals() {
+  let total = 0, done = 0;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (maze.open[r][c]) { total++; if (paint[r][c] === 'green') done++; }
+  }
+  return { total, done };
+}
+
+function makeSprite(glyph, cls) {
+  const el = document.createElement('div');
+  el.className = 'sprite ' + cls;
+  const g = document.createElement('span');
+  g.className = 'glyph';
+  g.textContent = glyph;
+  el.appendChild(g);
+  boardEl.appendChild(el);
+  return el;
+}
+
+// Build the grid cells and the moving sprites once per level; render() only updates them.
+function buildBoard() {
+  // fit the board in the window: pitch = cell + gap, at most 72 px
+  const roomW = window.innerWidth - 40, roomH = window.innerHeight - 300;
+  PITCH = Math.max(28, Math.min(72, Math.floor(roomW / COLS), Math.floor(roomH / ROWS)));
+  CELL = Math.floor(PITCH * 0.89);
+  GAP = PITCH - CELL;
+  document.documentElement.style.setProperty('--cell', CELL + 'px');
+  document.documentElement.style.setProperty('--gap', GAP + 'px');
+  boardEl.innerHTML = '';
+  boardEl.style.gridTemplateColumns = `repeat(${COLS}, ${CELL}px)`;
+  boardEl.style.gridAutoRows = `${CELL}px`;
+  cellEls = [];
+  for (let r = 0; r < ROWS; r++) {
+    cellEls.push([]);
+    for (let c = 0; c < COLS; c++) {
+      const el = document.createElement('div');
+      boardEl.appendChild(el);
+      cellEls[r].push(el);
+    }
+  }
+  playerEl = makeSprite('🚀', 'player');
+  alienEls = aliens.map(() => makeSprite('👾', 'alien hidden')); // invisible until the alien appears
+  playerSnap = true;
+}
+
+// Slide a sprite to its cell; snap = jump without animation.
+function placeSprite(el, r, c, snap) {
+  const t = `translate(${c * PITCH}px, ${r * PITCH}px)`;
+  if (snap || !el._placed) {
+    el.style.transition = 'none';
+    el.style.transform = t;
+    void el.offsetWidth;            // apply the jump before restoring the animation
+    el.style.transition = '';
+  } else {
+    el.style.transform = t;
+  }
+  el._placed = true;
+}
+
+function render() {
+  // blink the spawn cell for the last 2 s before any alien (new or returning) appears
+  const spawnWarning = state === 'playing' && aliens.some(a => !a.alive && clock >= a.appearAt - SPAWN_WARN_MS && clock < a.appearAt);
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const el = cellEls[r][c];
+    let cls = 'cell ' + (!maze.open[r][c] ? 'wall' : (paint[r][c] || 'path'));
+    if (shot && shot.path.some(p => p.r === r && p.c === c)) cls += ' shot';
+    if (spawnWarning && r === spawnCell.r && c === spawnCell.c) cls += ' warn';
+    if (el.classList.contains('item')) cls += el.classList.contains('expiring') ? ' item expiring' : ' item';
+    if (el.className !== cls) el.className = cls;
+    let text = '';
+    const item = [[weapon, '🔫'], [ammoCell, '📦']].find(([it]) => it.visible && it.r === r && it.c === c);
+    if (item) text = item[1];
+    if (el.textContent !== text) el.textContent = text;
+    if (item) {
+      const left = Math.max(0, item[0].expiresAt - clock);
+      el.style.setProperty('--p', (left / ITEM_LIFE_MS).toFixed(3));   // shrinking bar
+      el.classList.add('item');
+      el.classList.toggle('expiring', left <= ITEM_WARN_MS);
+    } else {
+      el.classList.remove('item', 'expiring');
+    }
+  }
+  placeSprite(playerEl, player.r, player.c, playerSnap);
+  playerSnap = false;
+  aliens.forEach((a, i) => {
+    const el = alienEls[i];
+    const shown = a.alive || a.dying;
+    if (shown) {
+      placeSprite(el, a.r, a.c, !el._wasAlive);   // a new alien appears in place, then walks
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+    el._wasAlive = shown;
+  });
+  const t = totals();
+  renderHud(t.done, t.total);
+  statusEl.textContent = `Level ${level} of ${LAST_LEVEL}. Lives: ${'♥'.repeat(lives)}${'♡'.repeat(START_LIVES - lives)} (${lives}). Painted ${t.done} of ${t.total}. Weapon: ${hasWeapon ? 'yes' : 'no'}. Ammo: ${ammo}. Aliens killed: ${kills}`;
+}
+
+function move(dr, dc) {
+  if (state !== 'playing') return;
+  const r = player.r + dr, c = player.c + dc;
+  if (r < 0 || c < 0 || r >= ROWS || c >= COLS || !maze.open[r][c]) return; // wall
+  player = { r, c };
+  facing = [dr, dc];
+  paint[r][c] = 'green';
+  pickUp();
+  checkCollision();
+  checkLevelComplete();
+  render();
+}
+
+// Level is complete as soon as every walkable cell is green (checked after each player move).
+function checkLevelComplete() {
+  if (state !== 'playing') return;
+  const t = totals();
+  if (t.done < t.total) return;
+  stopTimer();
+  if (level >= LAST_LEVEL) {
+    state = 'victory';
+    resultEl.textContent = `You win! All 6 levels complete. Aliens killed: ${kills}`;
+    showEnd(true);
+  } else {
+    state = 'levelComplete';
+    resultEl.textContent = `Level ${level} complete. Aliens killed so far: ${kills}`;
+    nextBtn.hidden = false;
+    nextBtn.focus();
+  }
+}
+
+const KEYS = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
+document.addEventListener('keydown', (e) => {
+  if (e.key === ' ') {
+    if (state === 'playing') e.preventDefault(); // do not scroll or press a focused button
+    if (!e.repeat) shoot();
+    return;
+  }
+  if (!KEYS[e.key]) return;
+  e.preventDefault();          // do not scroll the page
+  if (e.repeat) return;        // one step = one key press
+  move(...KEYS[e.key]);
+});
+
+startBtn.addEventListener('click', () => {
+  startBtn.hidden = true;
+  document.getElementById('startScores').hidden = true;
+  document.getElementById('instructions').hidden = true;
+  restartBtn.hidden = false;
+  hudEl.hidden = false;
+  newGame();
+  restartBtn.blur();
+});
+restartBtn.addEventListener('click', () => { newGame(); restartBtn.blur(); });
+showStartScores();
+againBtn.addEventListener('click', () => { newGame(); againBtn.blur(); });
+nextBtn.addEventListener('click', () => { level++; startLevel(); nextBtn.blur(); });
+</script>
+</body>
+</html>
